@@ -10,6 +10,12 @@ extern int total_mines;  // The count of mines of the game map.
 
 // You MUST NOT use any other external variables except for rows, columns and total_mines.
 
+// Additional global variables for client
+char current_map[35][35];  // Current visible map state
+int is_mine[35][35];       // -1: unknown, 0: safe, 1: mine
+int visited_count;         // Count of visited grids
+int marked_count;          // Count of marked mines
+
 /**
  * @brief The definition of function Execute(int, int, bool)
  *
@@ -34,7 +40,16 @@ void Execute(int r, int c, int type);
  * will read the scale of the game map and the first step taken by the server (see README).
  */
 void InitGame() {
-  // TODO (student): Initialize all your global variables!
+  // Initialize all global variables
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      current_map[i][j] = '?';
+      is_mine[i][j] = -1;  // unknown
+    }
+  }
+  visited_count = 0;
+  marked_count = 0;
+
   int first_row, first_column;
   std::cin >> first_row >> first_column;
   Execute(first_row, first_column, 0);
@@ -51,7 +66,21 @@ void InitGame() {
  *     01?
  */
 void ReadMap() {
-  // TODO (student): Implement me!
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      std::cin >> current_map[i][j];
+
+      // Update knowledge based on visible information
+      if (current_map[i][j] >= '0' && current_map[i][j] <= '8') {
+        is_mine[i][j] = 0;  // confirmed safe
+      } else if (current_map[i][j] == '@') {
+        is_mine[i][j] = 1;  // confirmed mine
+      } else if (current_map[i][j] == 'X') {
+        // Visited mine or marked non-mine (game should end)
+        is_mine[i][j] = 1;
+      }
+    }
+  }
 }
 
 /**
@@ -61,10 +90,143 @@ void ReadMap() {
  * mind and make your decision here! Caution: you can only execute once in this function.
  */
 void Decide() {
-  // TODO (student): Implement me!
-  // while (true) {
-  //   Execute(0, 0);
-  // }
+  int dr[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  int dc[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+
+  // Strategy 1: Check for auto-explore opportunities
+  // If a visited cell has all its mines marked, auto-explore it
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (current_map[i][j] >= '1' && current_map[i][j] <= '8') {
+        int mine_count = current_map[i][j] - '0';
+        int marked_neighbors = 0;
+        int unvisited_neighbors = 0;
+
+        for (int k = 0; k < 8; k++) {
+          int ni = i + dr[k];
+          int nj = j + dc[k];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (current_map[ni][nj] == '@') {
+              marked_neighbors++;
+            } else if (current_map[ni][nj] == '?') {
+              unvisited_neighbors++;
+            }
+          }
+        }
+
+        // If all mines around this cell are marked, we can auto-explore
+        if (marked_neighbors == mine_count && unvisited_neighbors > 0) {
+          Execute(i, j, 2);  // Auto-explore
+          return;
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Mark obvious mines
+  // If a visited cell has exactly as many unvisited neighbors as its mine count
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (current_map[i][j] >= '1' && current_map[i][j] <= '8') {
+        int mine_count = current_map[i][j] - '0';
+        int marked_neighbors = 0;
+        int unvisited_neighbors = 0;
+        int first_unvisited_r = -1, first_unvisited_c = -1;
+
+        for (int k = 0; k < 8; k++) {
+          int ni = i + dr[k];
+          int nj = j + dc[k];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (current_map[ni][nj] == '@') {
+              marked_neighbors++;
+            } else if (current_map[ni][nj] == '?') {
+              unvisited_neighbors++;
+              if (first_unvisited_r == -1) {
+                first_unvisited_r = ni;
+                first_unvisited_c = nj;
+              }
+            }
+          }
+        }
+
+        // If remaining unvisited neighbors equal remaining mines, mark them
+        int remaining_mines = mine_count - marked_neighbors;
+        if (remaining_mines > 0 && remaining_mines == unvisited_neighbors) {
+          // Mark one of the unvisited neighbors as a mine
+          Execute(first_unvisited_r, first_unvisited_c, 1);
+          return;
+        }
+      }
+    }
+  }
+
+  // Strategy 3: Visit safe cells
+  // If a cell has all its mines already marked, visit an unvisited neighbor
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (current_map[i][j] >= '0' && current_map[i][j] <= '8') {
+        int mine_count = current_map[i][j] - '0';
+        int marked_neighbors = 0;
+
+        for (int k = 0; k < 8; k++) {
+          int ni = i + dr[k];
+          int nj = j + dc[k];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (current_map[ni][nj] == '@') {
+              marked_neighbors++;
+            }
+          }
+        }
+
+        // If all mines are marked, visit unvisited neighbors
+        if (marked_neighbors == mine_count) {
+          for (int k = 0; k < 8; k++) {
+            int ni = i + dr[k];
+            int nj = j + dc[k];
+            if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+              if (current_map[ni][nj] == '?') {
+                Execute(ni, nj, 0);
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Strategy 4: If no safe move, take a guess on an unvisited cell
+  // Try to find the cell with the most safe neighbors (best guess)
+  int best_r = -1, best_c = -1;
+  int best_score = -1;
+
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (current_map[i][j] == '?') {
+        int safe_neighbors = 0;
+        for (int k = 0; k < 8; k++) {
+          int ni = i + dr[k];
+          int nj = j + dc[k];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (current_map[ni][nj] >= '0' && current_map[ni][nj] <= '8') {
+              safe_neighbors++;
+            }
+          }
+        }
+
+        if (safe_neighbors > best_score) {
+          best_score = safe_neighbors;
+          best_r = i;
+          best_c = j;
+        }
+      }
+    }
+  }
+
+  if (best_r != -1) {
+    Execute(best_r, best_c, 0);
+    return;
+  }
 }
 
 #endif
