@@ -93,100 +93,67 @@ void Decide() {
   int dr[] = {-1, -1, -1, 0, 0, 1, 1, 1};
   int dc[] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
-  // Strategy 1: Check for auto-explore opportunities
-  // If a visited cell has all its mines marked, auto-explore it
-  for (int i = 0; i < rows; i++) {
-    for (int j = 0; j < columns; j++) {
-      if (current_map[i][j] >= '1' && current_map[i][j] <= '8') {
-        int mine_count = current_map[i][j] - '0';
-        int marked_neighbors = 0;
-        int unvisited_neighbors = 0;
-
-        for (int k = 0; k < 8; k++) {
-          int ni = i + dr[k];
-          int nj = j + dc[k];
-          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
-            if (current_map[ni][nj] == '@') {
-              marked_neighbors++;
-            } else if (current_map[ni][nj] == '?') {
-              unvisited_neighbors++;
-            }
-          }
-        }
-
-        // If all mines around this cell are marked, we can auto-explore
-        if (marked_neighbors == mine_count && unvisited_neighbors > 0) {
-          Execute(i, j, 2);  // Auto-explore
-          return;
-        }
-      }
-    }
-  }
-
-  // Strategy 2: Mark obvious mines
-  // If a visited cell has exactly as many unvisited neighbors as its mine count
-  for (int i = 0; i < rows; i++) {
-    for (int j = 0; j < columns; j++) {
-      if (current_map[i][j] >= '1' && current_map[i][j] <= '8') {
-        int mine_count = current_map[i][j] - '0';
-        int marked_neighbors = 0;
-        int unvisited_neighbors = 0;
-        int first_unvisited_r = -1, first_unvisited_c = -1;
-
-        for (int k = 0; k < 8; k++) {
-          int ni = i + dr[k];
-          int nj = j + dc[k];
-          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
-            if (current_map[ni][nj] == '@') {
-              marked_neighbors++;
-            } else if (current_map[ni][nj] == '?') {
-              unvisited_neighbors++;
-              if (first_unvisited_r == -1) {
-                first_unvisited_r = ni;
-                first_unvisited_c = nj;
-              }
-            }
-          }
-        }
-
-        // If remaining unvisited neighbors equal remaining mines, mark them
-        int remaining_mines = mine_count - marked_neighbors;
-        if (remaining_mines > 0 && remaining_mines == unvisited_neighbors) {
-          // Mark one of the unvisited neighbors as a mine
-          Execute(first_unvisited_r, first_unvisited_c, 1);
-          return;
-        }
-      }
-    }
-  }
-
-  // Strategy 3: Visit safe cells
-  // If a cell has all its mines already marked, visit an unvisited neighbor
+  // Create a knowledge map: 0 = definitely safe, 1 = definitely mine, -1 = unknown
+  int cell_knowledge[35][35];
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (current_map[i][j] >= '0' && current_map[i][j] <= '8') {
-        int mine_count = current_map[i][j] - '0';
-        int marked_neighbors = 0;
+        cell_knowledge[i][j] = 0;  // safe
+      } else if (current_map[i][j] == '@') {
+        cell_knowledge[i][j] = 1;  // mine
+      } else {
+        cell_knowledge[i][j] = -1;  // unknown
+      }
+    }
+  }
 
-        for (int k = 0; k < 8; k++) {
-          int ni = i + dr[k];
-          int nj = j + dc[k];
-          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
-            if (current_map[ni][nj] == '@') {
-              marked_neighbors++;
-            }
-          }
-        }
+  // Iteratively apply constraint reasoning
+  bool changed = true;
+  while (changed) {
+    changed = false;
 
-        // If all mines are marked, visit unvisited neighbors
-        if (marked_neighbors == mine_count) {
+    for (int i = 0; i < rows; i++) {
+      for (int j = 0; j < columns; j++) {
+        if (current_map[i][j] >= '0' && current_map[i][j] <= '8') {
+          int mine_count = current_map[i][j] - '0';
+          int marked_neighbors = 0;
+          int unvisited_neighbors = 0;
+          int unvisited_list[8][2];
+          int unvisited_count = 0;
+
           for (int k = 0; k < 8; k++) {
             int ni = i + dr[k];
             int nj = j + dc[k];
             if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
-              if (current_map[ni][nj] == '?') {
-                Execute(ni, nj, 0);
-                return;
+              if (cell_knowledge[ni][nj] == 1) {
+                marked_neighbors++;
+              } else if (cell_knowledge[ni][nj] == -1) {
+                unvisited_neighbors++;
+                unvisited_list[unvisited_count][0] = ni;
+                unvisited_list[unvisited_count][1] = nj;
+                unvisited_count++;
+              }
+            }
+          }
+
+          int remaining_mines = mine_count - marked_neighbors;
+
+          // If all remaining cells are mines, mark them
+          if (remaining_mines == unvisited_neighbors && remaining_mines > 0) {
+            for (int k = 0; k < unvisited_count; k++) {
+              if (cell_knowledge[unvisited_list[k][0]][unvisited_list[k][1]] == -1) {
+                cell_knowledge[unvisited_list[k][0]][unvisited_list[k][1]] = 1;
+                changed = true;
+              }
+            }
+          }
+
+          // If no remaining mines, all cells are safe
+          if (remaining_mines == 0 && unvisited_neighbors > 0) {
+            for (int k = 0; k < unvisited_count; k++) {
+              if (cell_knowledge[unvisited_list[k][0]][unvisited_list[k][1]] == -1) {
+                cell_knowledge[unvisited_list[k][0]][unvisited_list[k][1]] = 0;
+                changed = true;
               }
             }
           }
@@ -195,27 +162,111 @@ void Decide() {
     }
   }
 
-  // Strategy 4: If no safe move, take a guess on an unvisited cell
-  // Try to find the cell with the most safe neighbors (best guess)
+  // Strategy 1: Auto-explore where all mines are marked
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (current_map[i][j] >= '1' && current_map[i][j] <= '8') {
+        int mine_count = current_map[i][j] - '0';
+        int marked_neighbors = 0;
+        int unvisited_neighbors = 0;
+
+        for (int k = 0; k < 8; k++) {
+          int ni = i + dr[k];
+          int nj = j + dc[k];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (current_map[ni][nj] == '@') {
+              marked_neighbors++;
+            } else if (current_map[ni][nj] == '?') {
+              unvisited_neighbors++;
+            }
+          }
+        }
+
+        if (marked_neighbors == mine_count && unvisited_neighbors > 0) {
+          Execute(i, j, 2);
+          return;
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Mark identified mines
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (current_map[i][j] == '?' && cell_knowledge[i][j] == 1) {
+        Execute(i, j, 1);
+        return;
+      }
+    }
+  }
+
+  // Strategy 3: Visit identified safe cells
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (current_map[i][j] == '?' && cell_knowledge[i][j] == 0) {
+        Execute(i, j, 0);
+        return;
+      }
+    }
+  }
+
+  // Strategy 4: Probability-based guessing with better heuristics
+  // Look for safest cell to guess based on multiple factors
   int best_r = -1, best_c = -1;
-  int best_score = -1;
+  int best_score = -1000;
 
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (current_map[i][j] == '?') {
-        int safe_neighbors = 0;
+        int score = 0;
+        int visible_neighbors = 0;
+        int low_count_neighbors = 0;
+        int high_count_neighbors = 0;
+
+        // Count different types of neighbors
         for (int k = 0; k < 8; k++) {
           int ni = i + dr[k];
           int nj = j + dc[k];
           if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
             if (current_map[ni][nj] >= '0' && current_map[ni][nj] <= '8') {
-              safe_neighbors++;
+              visible_neighbors++;
+              int num = current_map[ni][nj] - '0';
+
+              // Count how many mines are already marked
+              int marked = 0;
+              int unknown = 0;
+              for (int m = 0; m < 8; m++) {
+                int nni = ni + dr[m];
+                int nnj = nj + dc[m];
+                if (nni >= 0 && nni < rows && nnj >= 0 && nnj < columns) {
+                  if (current_map[nni][nnj] == '@') marked++;
+                  if (current_map[nni][nnj] == '?') unknown++;
+                }
+              }
+
+              int remaining = num - marked;
+              if (remaining == 0) {
+                score += 100;  // Very safe - all mines found
+              } else if (unknown > 0 && remaining < unknown) {
+                score += 10;  // Relatively safe
+                low_count_neighbors++;
+              } else if (unknown > 0 && remaining == unknown) {
+                score -= 100;  // Dangerous - must be a mine
+              } else {
+                high_count_neighbors++;
+              }
             }
           }
         }
 
-        if (safe_neighbors > best_score) {
-          best_score = safe_neighbors;
+        // Prefer cells with visible neighbors (not edges)
+        score += visible_neighbors * 5;
+
+        // Prefer cells with low mine count neighbors
+        score += low_count_neighbors * 3;
+
+        if (score > best_score) {
+          best_score = score;
           best_r = i;
           best_c = j;
         }
